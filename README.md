@@ -14,9 +14,11 @@ pip install openai-whisper pydub python-docx pyqt5 numba==0.56.4 llvmlite==0.39.
 
 ## 專案結構
 ```sh
-your_project/
- ├─ main.py
+Record_to_text/
  ├─ ffmpeg/
  │   ├─ ffmpeg.exe
  │   └─ ffprobe.exe
+ ├─ Record_to_text.py
+ └─ icon.ico
 ```
+
