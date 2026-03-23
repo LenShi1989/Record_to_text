@@ -19,6 +19,6 @@ Record_to_text/
  │   ├─ ffmpeg.exe
  │   └─ ffprobe.exe
  ├─ Record_to_text.py
- └─ icon.ico
+ └─ Record.ico
 ```
 
