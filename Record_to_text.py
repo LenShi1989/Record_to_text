@@ -8,29 +8,18 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
 from pydub import AudioSegment
-import whisper
 from docx import Document
 
+# 🔥 改這裡（使用 faster-whisper）
+from faster_whisper import WhisperModel
 
-# 🔥 這行是關鍵（Taskbar icon）
+
+# 🔥 Taskbar icon
 myappid = "JQuan.com.tw"
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 
-def get_base_path():
-    if getattr(sys, 'frozen', False):
-        return sys._MEIPASS
-    return os.path.abspath(".")
-
-
-def get_ffmpeg_path():
-    return os.path.join(get_base_path(), "ffmpeg", "ffmpeg.exe")
-
-
-def get_ffprobe_path():
-    return os.path.join(get_base_path(), "ffmpeg", "ffprobe.exe")
-
-
+# ✅ 資源路徑（支援 exe）
 def resource_path(relative_path):
     if getattr(sys, 'frozen', False):
         base_path = sys._MEIPASS
@@ -39,16 +28,17 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-AudioSegment.converter = get_ffmpeg_path()
-AudioSegment.ffmpeg = get_ffmpeg_path()
-AudioSegment.ffprobe = get_ffprobe_path()
+# ✅ ffmpeg 路徑
+AudioSegment.converter = resource_path("ffmpeg/ffmpeg.exe")
+AudioSegment.ffmpeg = resource_path("ffmpeg/ffmpeg.exe")
+AudioSegment.ffprobe = resource_path("ffmpeg/ffprobe.exe")
 
 
 class TranscribeThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str, str)
 
-    def __init__(self, file_path, model_name="base"):
+    def __init__(self, file_path, model_name="medium"):
         super().__init__()
         self.file_path = file_path
         self.model_name = model_name
@@ -66,19 +56,33 @@ class TranscribeThread(QThread):
 
             self.progress.emit(30)
 
-            # 語音辨識
-            model = whisper.load_model(self.model_name)
-            result = model.transcribe(str(wav_file), language="zh")
+            # 🔥 faster-whisper 高準確設定
+            model = WhisperModel(
+                self.model_name,          # "medium" or "large-v3"
+                device="cpu",             # 有 GPU 可改 "cuda"
+                compute_type="int8"       # CPU 最佳
+            )
 
-            text = result["text"]
+            segments, info = model.transcribe(
+                str(wav_file),
+                language="zh",            # 🔥 強制中文
+                beam_size=5,              # 🔥 提高準確率
+                vad_filter=False          # 🔥 去除靜音提升效果
+            )
+
+            text = ""
+            for segment in segments:
+                text += segment.text
+
             self.progress.emit(70)
 
-            # 生成大綱
+            # 🧠 生成大綱
             sentences = [
                 s.strip() for s in text.replace("，", "，\n").replace("。", "。\n").split("\n") if s.strip()
             ]
             outline = "\n".join(
-                [f"{i+1}. {s}" for i, s in enumerate(sentences)])
+                [f"{i+1}. {s}" for i, s in enumerate(sentences)]
+            )
 
             self.progress.emit(100)
             self.finished.emit(text, outline)
@@ -90,7 +94,7 @@ class TranscribeThread(QThread):
 class SpeechToTextApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("語音轉文字工具")
+        self.setWindowTitle("語音轉文字工具 by Len")
         self.setGeometry(300, 200, 600, 550)
 
         layout = QVBoxLayout()
@@ -144,8 +148,8 @@ class SpeechToTextApp(QWidget):
         self.btn_transcribe.setEnabled(False)
         self.btn_export.setEnabled(False)
 
-        # 背景執行
-        self.thread = TranscribeThread(self.audio_file, "base")
+        self.thread = TranscribeThread(
+            self.audio_file, "medium")  # 🔥 可改 large-v3
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_transcription_finished)
         self.thread.start()

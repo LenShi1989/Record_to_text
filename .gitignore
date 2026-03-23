@@ -21,7 +21,10 @@ rad.json
 #Test results file
 TestResults.xml
 
-# ffmpeg 相關
+# 專案相關
 ffmpeg/
 *.exe
 *.ico
+*.m4a
+*.wav
+*.docx
