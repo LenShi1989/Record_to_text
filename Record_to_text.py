@@ -1,13 +1,20 @@
 import os
 import sys
+import ctypes
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QFileDialog, QLabel, QProgressBar
 )
 from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QIcon
 from pydub import AudioSegment
 import whisper
 from docx import Document
+
+
+# 🔥 這行是關鍵（Taskbar icon）
+myappid = "JQuan.com.tw"
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 
 def get_base_path():
@@ -22,6 +29,14 @@ def get_ffmpeg_path():
 
 def get_ffprobe_path():
     return os.path.join(get_base_path(), "ffmpeg", "ffprobe.exe")
+
+
+def resource_path(relative_path):
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 
 AudioSegment.converter = get_ffmpeg_path()
@@ -171,6 +186,9 @@ class SpeechToTextApp(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    icon_path = resource_path("Record.ico")
+    app.setWindowIcon(QIcon(icon_path))
     window = SpeechToTextApp()
+    window.setWindowIcon(QIcon(icon_path))
     window.show()
     sys.exit(app.exec_())
