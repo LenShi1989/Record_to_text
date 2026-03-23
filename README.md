@@ -22,3 +22,10 @@ Record_to_text/
  └─ Record.ico
 ```
 
+## 注意事項
+打包exe檔時需加入
+```sh
+--collect-data whisper
+```
+
+
