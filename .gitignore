@@ -23,6 +23,7 @@ TestResults.xml
 
 # 專案相關
 ffmpeg/
+venv310/
 *.exe
 *.ico
 *.m4a
