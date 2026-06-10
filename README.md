@@ -60,6 +60,12 @@ py -3.10 -m venv venv310
 venv310\Scripts\activate
 ```
 
+關閉虛擬環境
+
+```sh
+deactivate
+```
+
 升級pip
 
 ```sh
