@@ -1,0 +1,8 @@
+PyQt5 
+pydub 
+python-docx
+faster-whisper 
+ctranslate2
+onnxruntime
+onnxruntime-gpu
+```

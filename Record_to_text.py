@@ -1,4 +1,3 @@
-import os
 import sys
 import ctypes
 from pathlib import Path
@@ -19,19 +18,27 @@ myappid = "JQuan.com.tw"
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 
-# ✅ 資源路徑（支援 exe）
-def resource_path(relative_path):
-    if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
+def resolve_ffmpeg_path(filename):
+    candidates = []
+
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys._MEIPASS) / "ffmpeg" / filename)
+
+    project_dir = Path(__file__).resolve().parent
+    candidates.append(project_dir / "ffmpeg" / filename)
+    candidates.append(Path("C:/ffmpeg") / filename)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return str(candidates[0])
 
 
-# ✅ ffmpeg 路徑
-AudioSegment.converter = resource_path("ffmpeg/ffmpeg.exe")
-AudioSegment.ffmpeg = resource_path("ffmpeg/ffmpeg.exe")
-AudioSegment.ffprobe = resource_path("ffmpeg/ffprobe.exe")
+# ffmpeg 路徑：先抓專案內，再抓 C:/ffmpeg
+AudioSegment.converter = resolve_ffmpeg_path("ffmpeg.exe")
+AudioSegment.ffmpeg = resolve_ffmpeg_path("ffmpeg.exe")
+AudioSegment.ffprobe = resolve_ffmpeg_path("ffprobe.exe")
 
 
 class TranscribeThread(QThread):
