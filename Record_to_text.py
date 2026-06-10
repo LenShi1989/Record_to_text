@@ -35,6 +35,12 @@ def resolve_ffmpeg_path(filename):
     return str(candidates[0])
 
 
+def resource_path(relative_path):
+    if getattr(sys, "frozen", False):
+        return str(Path(sys._MEIPASS) / relative_path)
+    return str(Path(__file__).resolve().parent / relative_path)
+
+
 # ffmpeg 路徑：先抓專案內，再抓 C:/ffmpeg
 AudioSegment.converter = resolve_ffmpeg_path("ffmpeg.exe")
 AudioSegment.ffmpeg = resolve_ffmpeg_path("ffmpeg.exe")

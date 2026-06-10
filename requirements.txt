@@ -5,4 +5,3 @@ faster-whisper
 ctranslate2
 onnxruntime
 onnxruntime-gpu
-```

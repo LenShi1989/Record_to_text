@@ -66,6 +66,12 @@ venv310\Scripts\activate
 python -m pip install --upgrade pip
 ```
 
+安裝txt裡面的所有套件
+
+```sh
+pip install -r requirements.txt
+```
+
 ## 專案結構
 
 建議架構如下：
