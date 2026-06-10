@@ -1,21 +1,23 @@
-import sys
 import ctypes
+import os
+import subprocess
+import sys
 from pathlib import Path
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QFileDialog, QLabel, QProgressBar
-)
+
+from docx import Document
+from faster_whisper import WhisperModel
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
-from pydub import AudioSegment
-from docx import Document
-
-# 🔥 改這裡（使用 faster-whisper）
-from faster_whisper import WhisperModel
-
-
-# 🔥 Taskbar icon
-myappid = "JQuan.com.tw"
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+from PyQt5.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QLabel,
+    QProgressBar,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 def resolve_ffmpeg_path(filename):
@@ -41,10 +43,42 @@ def resource_path(relative_path):
     return str(Path(__file__).resolve().parent / relative_path)
 
 
-# ffmpeg 路徑：先抓專案內，再抓 C:/ffmpeg
-AudioSegment.converter = resolve_ffmpeg_path("ffmpeg.exe")
-AudioSegment.ffmpeg = resolve_ffmpeg_path("ffmpeg.exe")
-AudioSegment.ffprobe = resolve_ffmpeg_path("ffprobe.exe")
+FFMPEG_PATH = resolve_ffmpeg_path("ffmpeg.exe")
+
+
+def convert_audio_to_wav(source_path, target_path):
+    startupinfo = None
+    creationflags = 0
+
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        creationflags = subprocess.CREATE_NO_WINDOW
+
+    command = [
+        FFMPEG_PATH,
+        "-y",
+        "-i",
+        str(source_path),
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        str(target_path),
+    ]
+
+    subprocess.run(
+        command,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        startupinfo=startupinfo,
+        creationflags=creationflags,
+    )
+
+
+myappid = "JQuan.com.tw"
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 
 class TranscribeThread(QThread):
@@ -57,62 +91,70 @@ class TranscribeThread(QThread):
         self.model_name = model_name
 
     def run(self):
+        wav_file = None
+
         try:
             self.progress.emit(10)
             file_path = Path(self.file_path)
-            wav_file = file_path.with_suffix(".wav")
+            wav_file = file_path.with_name(f"{file_path.stem}_transcribed.wav")
 
-            # 轉換成 wav
-            sound = AudioSegment.from_file(file_path)
-            sound = sound.set_frame_rate(16000).set_channels(1)
-            sound.export(wav_file, format="wav")
+            convert_audio_to_wav(file_path, wav_file)
 
             self.progress.emit(30)
 
-            # 🔥 faster-whisper 高準確設定
             model = WhisperModel(
-                self.model_name,          # "medium" or "large-v3"
-                device="cpu",             # 有 GPU 可改 "cuda"
-                compute_type="int8"       # CPU 最佳
+                self.model_name,
+                device="cpu",
+                compute_type="int8",
             )
 
-            segments, info = model.transcribe(
+            segments, _info = model.transcribe(
                 str(wav_file),
-                language="zh",            # 🔥 強制中文
-                beam_size=5,              # 🔥 提高準確率
-                vad_filter=False          # 🔥 去除靜音提升效果
+                language="zh",
+                beam_size=5,
+                vad_filter=False,
             )
 
-            text = ""
-            for segment in segments:
-                text += segment.text
+            text = "".join(segment.text for segment in segments)
 
             self.progress.emit(70)
 
-            # 🧠 生成大綱
             sentences = [
-                s.strip() for s in text.replace("，", "，\n").replace("。", "。\n").split("\n") if s.strip()
+                sentence.strip()
+                for sentence in (
+                    text.replace("。", "\n")
+                    .replace("！", "\n")
+                    .replace("？", "\n")
+                    .replace("；", "\n")
+                    .replace("，", "\n")
+                ).split("\n")
+                if sentence.strip()
             ]
-            outline = "\n".join(
-                [f"{i+1}. {s}" for i, s in enumerate(sentences)]
-            )
+            outline = "\n".join(f"{index + 1}. {sentence}" for index, sentence in enumerate(sentences))
 
             self.progress.emit(100)
             self.finished.emit(text, outline)
 
-        except Exception as e:
-            self.finished.emit(f"(錯誤: {e})", "")
+        except Exception as exc:
+            self.finished.emit(f"(發生錯誤: {exc})", "")
+
+        finally:
+            if wav_file and wav_file.exists():
+                try:
+                    wav_file.unlink()
+                except OSError:
+                    pass
 
 
 class SpeechToTextApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("語音轉文字工具 by Len")
+        self.setWindowTitle("音檔轉文字 by Len")
         self.setGeometry(300, 200, 600, 550)
 
         layout = QVBoxLayout()
 
-        self.label = QLabel("請選擇一個音檔 (m4a/wav)")
+        self.label = QLabel("請選擇音檔 (m4a / wav / mp3)")
         layout.addWidget(self.label)
 
         self.progress_bar = QProgressBar()
@@ -127,12 +169,12 @@ class SpeechToTextApp(QWidget):
         self.btn_open.clicked.connect(self.open_file)
         layout.addWidget(self.btn_open)
 
-        self.btn_transcribe = QPushButton("開始轉換")
+        self.btn_transcribe = QPushButton("開始轉錄")
         self.btn_transcribe.clicked.connect(self.transcribe_audio)
         self.btn_transcribe.setEnabled(False)
         layout.addWidget(self.btn_transcribe)
 
-        self.btn_export = QPushButton("匯出 Word 檔")
+        self.btn_export = QPushButton("匯出 Word")
         self.btn_export.clicked.connect(self.export_word)
         self.btn_export.setEnabled(False)
         layout.addWidget(self.btn_export)
@@ -145,24 +187,27 @@ class SpeechToTextApp(QWidget):
 
     def open_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "選擇音檔", "", "音訊檔 (*.m4a *.wav)")
+            self,
+            "選擇音檔",
+            "",
+            "音訊檔案 (*.m4a *.wav *.mp3 *.aac *.mp4);;所有檔案 (*)",
+        )
         if file_path:
             self.audio_file = file_path
-            self.label.setText(f"已選擇檔案：{Path(file_path).name}")
+            self.label.setText(f"已選擇：{Path(file_path).name}")
             self.btn_transcribe.setEnabled(True)
 
     def transcribe_audio(self):
         if not self.audio_file:
-            self.text_area.setText("請先選擇檔案")
+            self.text_area.setText("請先選擇音檔。")
             return
 
-        self.text_area.setText("轉換中，請稍候...")
+        self.text_area.setText("轉錄中，請稍候...")
         self.progress_bar.setValue(0)
         self.btn_transcribe.setEnabled(False)
         self.btn_export.setEnabled(False)
 
-        self.thread = TranscribeThread(
-            self.audio_file, "medium")  # 🔥 可改 large-v3
+        self.thread = TranscribeThread(self.audio_file, "medium")
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_transcription_finished)
         self.thread.start()
@@ -171,34 +216,38 @@ class SpeechToTextApp(QWidget):
         self.transcript_text = text
         self.outline_text = outline
         self.text_area.setText(
-            f"==== 語音轉文字 ====\n{text}\n\n==== 內容大綱 ====\n{outline}"
+            f"==== 逐字稿 ====\n{text}\n\n==== 重點整理 ====\n{outline}"
         )
         self.btn_transcribe.setEnabled(True)
-        if text and not text.startswith("(錯誤"):
+        if text and not text.startswith("(發生錯誤"):
             self.btn_export.setEnabled(True)
 
     def export_word(self):
         if not self.transcript_text:
-            self.text_area.setText("沒有可匯出的內容")
+            self.text_area.setText("沒有可匯出的轉錄內容。")
             return
 
         save_path, _ = QFileDialog.getSaveFileName(
-            self, "儲存 Word 檔", "轉換結果.docx", "Word 檔 (*.docx)")
+            self,
+            "儲存 Word 檔",
+            "轉錄結果.docx",
+            "Word 檔案 (*.docx)",
+        )
         if not save_path:
             return
 
         doc = Document()
-        doc.add_heading("語音轉文字結果", level=1)
+        doc.add_heading("音檔轉文字結果", level=1)
 
-        doc.add_heading("完整文字稿", level=2)
+        doc.add_heading("逐字稿", level=2)
         doc.add_paragraph(self.transcript_text)
 
-        doc.add_heading("內容大綱", level=2)
+        doc.add_heading("重點整理", level=2)
         for line in self.outline_text.split("\n"):
             doc.add_paragraph(line)
 
         doc.save(save_path)
-        self.text_area.append(f"\n✅ 已匯出 Word 檔：{save_path}")
+        self.text_area.append(f"\n已匯出 Word 檔：{save_path}")
 
 
 if __name__ == "__main__":
