@@ -2,6 +2,7 @@ import ctypes
 import os
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 from docx import Document
@@ -14,10 +15,19 @@ from PyQt5.QtWidgets import (
     QLabel,
     QProgressBar,
     QPushButton,
+    QMessageBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
+
+
+qt_plugins = os.path.join(
+    sys.prefix, "Lib", "site-packages", "PyQt5", "Qt5", "plugins")
+qt_platforms = os.path.join(qt_plugins, "platforms")
+
+os.environ["QT_PLUGIN_PATH"] = qt_plugins
+os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = qt_platforms
 
 
 def resolve_ffmpeg_path(filename):
@@ -30,11 +40,15 @@ def resolve_ffmpeg_path(filename):
     candidates.append(project_dir / "ffmpeg" / filename)
     candidates.append(Path("C:/ffmpeg") / filename)
 
+    system_ffmpeg = shutil.which(filename)
+    if system_ffmpeg:
+        return system_ffmpeg
+
     for candidate in candidates:
         if candidate.exists():
             return str(candidate)
 
-    return str(candidates[0])
+    return None
 
 
 def resource_path(relative_path):
@@ -46,7 +60,23 @@ def resource_path(relative_path):
 FFMPEG_PATH = resolve_ffmpeg_path("ffmpeg.exe")
 
 
+def get_ffmpeg_missing_message():
+    return (
+        "找不到 ffmpeg.exe。\n\n"
+        "請確認以下其中一種方式已完成：\n"
+        "1. 將 ffmpeg.exe 放到專案的 ffmpeg 資料夾\n"
+        "2. 將 ffmpeg 安裝後加入系統 PATH\n"
+        "3. 將 ffmpeg 安裝到 C:\\ffmpeg\\ffmpeg.exe"
+    )
+
+
 def convert_audio_to_wav(source_path, target_path):
+    if not FFMPEG_PATH:
+        raise FileNotFoundError(
+            "找不到 ffmpeg.exe。請把 ffmpeg.exe 放到專案的 ffmpeg 資料夾，"
+            "或安裝 ffmpeg 並加入 PATH。"
+        )
+
     startupinfo = None
     creationflags = 0
 
@@ -130,7 +160,8 @@ class TranscribeThread(QThread):
                 ).split("\n")
                 if sentence.strip()
             ]
-            outline = "\n".join(f"{index + 1}. {sentence}" for index, sentence in enumerate(sentences))
+            outline = "\n".join(
+                f"{index + 1}. {sentence}" for index, sentence in enumerate(sentences))
 
             self.progress.emit(100)
             self.finished.emit(text, outline)
@@ -184,6 +215,17 @@ class SpeechToTextApp(QWidget):
         self.audio_file = None
         self.transcript_text = ""
         self.outline_text = ""
+
+        self.check_ffmpeg_on_startup()
+
+    def check_ffmpeg_on_startup(self):
+        if FFMPEG_PATH:
+            return
+
+        message = get_ffmpeg_missing_message()
+        self.text_area.setText(message)
+        self.btn_transcribe.setEnabled(False)
+        QMessageBox.warning(self, "缺少 ffmpeg", message)
 
     def open_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
